@@ -68,6 +68,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def public_music_search_cors(request: Request, call_next):
+    if request.url.path.rstrip("/") == "/search" and request.method == "OPTIONS":
+        origin = request.headers.get("origin")
+        headers = {
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        }
+        if origin:
+            headers["Access-Control-Allow-Origin"] = origin
+        return Response(status_code=204, headers=headers)
+
+    response = await call_next(request)
+    if request.url.path.rstrip("/") == "/search":
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
 ytmusic = YTMusic()
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
@@ -889,9 +913,13 @@ async def update_check(current: str = Query("", description="Current app version
 
 @app.get("/search", response_model=SearchResult)
 async def search(
+    response: Response,
     q: str = Query(..., min_length=1, description="Search query"),
-    limit: int = Query(25, ge=1, le=50, description="Number of results")
+    limit: int = Query(25, ge=1, le=50, description="Number of results"),
 ):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Vary"] = "Origin"
+
     cache_key = get_cache_key("search", q, limit)
     cached = get_cached(cache_key, max_age_seconds=1800)
     if cached:
